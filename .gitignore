@@ -1,0 +1,11 @@
+# Secure PoC - Do not commit secrets
+__pycache__/
+*.pyc
+.env
+.env.local
+secrets/
+*.pem
+*.key
+node_modules/
+dist/
+build/

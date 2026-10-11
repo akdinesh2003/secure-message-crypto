@@ -1,0 +1,131 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Secure Message Encoder / Decoder</title>
+<style>
+  :root { --bg:#0b0c15; --panel:#12142b; --text:#e8e8f0; --accent:#00d4aa; --danger:#ff536f; --border:#2a2d42; }
+  * { box-sizing:border-box; }
+  body { margin:0; font-family: ui-sans-serif, system-ui, Segoe UI, sans-serif; background:var(--bg); color:var(--text); display:flex; flex-direction:column; align-items:center; min-height:100vh; padding:2rem 1rem; }
+  h1 { font-weight:700; letter-spacing:-0.02em; margin-bottom:0.25rem; }
+  .sub { opacity:.7; font-size:.9rem; margin-bottom:1.5rem; }
+  .actions { display:flex; gap:.5rem; margin-bottom:1rem; }
+  button { background:var(--panel); color:var(--text); border:1px solid var(--border); padding:.6rem 1.2rem; border-radius:.45rem; cursor:pointer; font-weight:600; }
+  button.primary { background:var(--accent); color:#041a12; border-color:var(--accent); }
+  button:hover { filter:brightness(1.08); }
+  .box { width:100%; max-width:640px; background:var(--panel); border:1px solid var(--border); border-radius:.6rem; padding:1rem; }
+  label { display:block; font-weight:600; font-size:.85rem; margin-bottom:.35rem; }
+  textarea { width:100%; min-height:120px; background:#09101a; border:1px solid var(--border); color:var(--text); border-radius:.4rem; padding:.6rem; font-family:monospace; font-size:.9rem; resize:vertical; }
+  .actions-row { margin-top:.5rem; display:flex; gap:.5rem; align-items:center; }
+  .status { margin-top:.25rem; font-size:.85rem; min-height:1.3rem; }
+  .status.ok { color:var(--accent); }
+  .status.err { color:var(--danger); }
+  .output { background:#09101a; border:1px solid var(--border); border-radius:.4rem; padding:.6rem; font-family:monospace; font-size:.85rem; word-break:break-word; white-space:pre-wrap; min-height:60px; }
+</style>
+</head>
+<body>
+  <h1>Secure Message Encoder / Decoder</h1>
+  <div class="sub">Proof of concept — AES-256-GCM + ECDSA (P-256)</div>
+
+  <div class="actions" aria-label="Main actions">
+    <button onclick="setMode('encode')" id="btn-encode">Encode</button>
+    <button onclick="setMode('decode')" id="btn-decode">Decode</button>
+  </div>
+
+  <div class="box">
+    <label for="input-text" id="input-label">Message to encode</label>
+    <textarea id="input-text" placeholder="Type a message..."></textarea>
+    <div class="actions-row">
+      <button class="primary" onclick="runAction()" id="btn-action">Encode</button>
+      <button onclick="clearAll()">Clear</button>
+    </div>
+    <div class="status" id="status"></div>
+  </div>
+
+  <div class="box" style="margin-top:1rem;">
+    <label for="output-text">Output</label>
+    <div class="output" id="output-text"></div>
+    <div class="actions-row">
+      <button onclick="copyOutput()">Copy</button>
+    </div>
+    <div class="status" id="status-output"></div>
+  </div>
+
+  <script>
+    let mode = 'encode';
+    // When opened as file://, use absolute localhost URL; when served by backend, relative
+    const backend = 'http://localhost:8000';
+
+    function setMode(m) {
+      mode = m;
+      document.getElementById('btn-encode').classList.toggle('primary', m==='encode');
+      document.getElementById('btn-decode').classList.toggle('primary', m==='decode');
+      document.getElementById('btn-action').textContent = m==='encode' ? 'Encode' : 'Decode';
+      document.getElementById('input-label').textContent = m==='encode' ? 'Message to encode' : 'Encrypted payload to decode';
+      document.getElementById('input-text').placeholder = m==='encode' ? 'Type a message...' : 'Paste encrypted payload...';
+      document.getElementById('status').textContent = '';
+      document.getElementById('output-text').textContent = '';
+      document.getElementById('status-output').textContent = '';
+    }
+
+    async function runAction() {
+      const val = document.getElementById('input-text').value.trim();
+      const status = document.getElementById('status');
+      const out = document.getElementById('output-text');
+      const statusOut = document.getElementById('status-output');
+      status.textContent = '';
+      status.className = 'status';
+      out.textContent = '';
+      statusOut.textContent = '';
+
+      if (!val) { status.textContent = 'Empty input.'; status.className = 'status err'; return; }
+
+      try {
+        const endpoint = mode === 'encode' ? '/encode' : '/decode';
+        const body = mode === 'encode' ? { message: val } : { payload: val };
+        const res = await fetch(backend + endpoint, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(body)
+        });
+        const data = await res.json();
+        if (!res.ok) {
+          status.textContent = data.detail || 'Invalid encrypted payload.';
+          status.className = 'status err';
+          return;
+        }
+        if (mode === 'encode') {
+          out.textContent = data.payload;
+          status.textContent = data.status || 'Message encrypted successfully.';
+          status.className = 'status ok';
+          statusOut.textContent = 'Payload ready to share. Copy it and send to another user.';
+        } else {
+          out.textContent = data.message || '';
+          status.textContent = data.status || 'Message decrypted successfully.';
+          status.className = 'status ok';
+          statusOut.textContent = 'Original message recovered.';
+        }
+      } catch (e) {
+        status.textContent = 'Invalid or corrupted encrypted message.';
+        status.className = 'status err';
+      }
+    }
+
+    function copyOutput() {
+      const text = document.getElementById('output-text').innerText;
+      if (!text) return;
+      navigator.clipboard.writeText(text).then(() => {
+        document.getElementById('status-output').textContent = 'Copied to clipboard.';
+      });
+    }
+
+    function clearAll() {
+      document.getElementById('input-text').value = '';
+      document.getElementById('output-text').textContent = '';
+      document.getElementById('status').textContent = '';
+      document.getElementById('status-output').textContent = '';
+    }
+  </script>
+</body>
+</html>
